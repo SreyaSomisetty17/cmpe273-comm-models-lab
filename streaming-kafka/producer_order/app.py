@@ -31,7 +31,8 @@ def generate_order(order_id):
         "restaurant": restaurant,
         "items": items,
         "total_amount": round(random.uniform(8.99, 45.99), 2),
-        "status": "placed"
+        "status": "placed",
+        "timestamp": time.time()
     }
 
 
