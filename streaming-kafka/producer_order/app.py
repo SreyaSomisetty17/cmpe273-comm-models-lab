@@ -56,7 +56,11 @@ def main():
     # Produce orders
     for i in range(args.count):
         order = generate_order(i)
-        producer.send(ORDER_KAFKA_TOPIC, json.dumps(order).encode("utf-8"))
+        try:
+            producer.send(ORDER_KAFKA_TOPIC, json.dumps(order).encode("utf-8"))
+        except Exception as e:
+            print(f"Failed to send order {order['order_id']}: {e}")
+            continue
         
         if (i + 1) % 1000 == 0:
             print(f"Sent {i + 1} orders...")
