@@ -27,6 +27,11 @@ def save_metrics(metrics, filename="metrics_report.txt"):
         if metrics['total_inventory'] > 0:
             rate = (metrics['failed_orders'] / metrics['total_inventory']) * 100
             f.write(f"  Failure Rate: {rate:.2f}%\n")
+
+        if metrics['minute_buckets']:
+            opm = list(metrics['minute_buckets'].values())
+            f.write(f"  Avg Orders/Min: {sum(opm)/len(opm):.1f}\n")
+            f.write(f"  Peak Orders/Min: {max(opm)}\n")
         
         f.write("\nORDERS BY RESTAURANT:\n")
         for restaurant, count in sorted(
@@ -68,38 +73,47 @@ def main():
         'total_inventory': 0,
         'failed_orders': 0,
         'orders_by_restaurant': defaultdict(int),
-        'revenue_by_restaurant': defaultdict(float)
+        'revenue_by_restaurant': defaultdict(float),
+        'minute_buckets': defaultdict(int)
     }
     
     processed = 0
     start_time = time.time()
     
     # Process events
-    for message in consumer:
-        event = json.loads(message.value.decode())
-        topic = message.topic
-        
-        if topic == ORDER_KAFKA_TOPIC:
-            metrics['total_orders'] += 1
-            metrics['orders_by_restaurant'][event['restaurant']] += 1
-            metrics['revenue_by_restaurant'][event['restaurant']] += event['total_amount']
-        
-        elif topic == INVENTORY_KAFKA_TOPIC:
-            metrics['total_inventory'] += 1
-            if not event['items_available']:
-                metrics['failed_orders'] += 1
-        
-        processed += 1
-        
-        if processed % 5000 == 0:
-            elapsed = time.time() - start_time
-            rate = processed / elapsed if elapsed > 0 else 0
-            print(f"Processed: {processed} messages ({rate:.2f} msg/s)")
-        
-        if args.max_messages and processed >= args.max_messages:
-            break
+    try:
+        for message in consumer:
+            event = json.loads(message.value.decode())
+            topic = message.topic
+            
+            if topic == ORDER_KAFKA_TOPIC:
+                metrics['total_orders'] += 1
+                metrics['orders_by_restaurant'][event['restaurant']] += 1
+                metrics['revenue_by_restaurant'][event['restaurant']] += event['total_amount']
+                bucket = int(event.get('timestamp', time.time()) // 60)
+                metrics['minute_buckets'][bucket] += 1
+            
+            elif topic == INVENTORY_KAFKA_TOPIC:
+                metrics['total_inventory'] += 1
+                if not event['items_available']:
+                    metrics['failed_orders'] += 1
+            
+            processed += 1
+            
+            if processed % 5000 == 0:
+                elapsed = time.time() - start_time
+                rate = processed / elapsed if elapsed > 0 else 0
+                print(f"Processed: {processed} messages ({rate:.2f} msg/s)")
+            
+            if args.max_messages and processed >= args.max_messages:
+                break
+
+    except KeyboardInterrupt:
+        print("\nShutting down gracefully...")
+    finally:
+        consumer.close()
     
-    # Display and save results
+    # Display results
     print(f"\n{'='*70}")
     print("ANALYTICS RESULTS")
     print(f"{'='*70}")
@@ -110,6 +124,11 @@ def main():
     if metrics['total_inventory'] > 0:
         failure_rate = (metrics['failed_orders'] / metrics['total_inventory']) * 100
         print(f"Failure Rate: {failure_rate:.2f}%")
+
+    if metrics['minute_buckets']:
+        opm = list(metrics['minute_buckets'].values())
+        print(f"Avg Orders/Min : {sum(opm)/len(opm):.1f}")
+        print(f"Peak Orders/Min: {max(opm)}")
     
     print(f"\nOrders by Restaurant:")
     for restaurant, count in sorted(
