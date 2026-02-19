@@ -233,13 +233,83 @@ python test_streaming.py  # edit throttle_ms=50 inside the file
 # Change event count
 # edit COUNT = 10_000 at the top of test_produce_10k()
 ```
-## Test Output Screenshots
+## Console Screenshots
 ![IMG-20260218-WA0004-1](https://github.com/user-attachments/assets/c006acd2-d283-41ff-8fd0-cd52bcda3eb6)
 ![IMG-20260218-WA0009-2](https://github.com/user-attachments/assets/dc6f5670-5008-45fd-99d3-620d7e822fee)
 ![IMG-20260218-WA0008-3](https://github.com/user-attachments/assets/3cfe7a5e-5ed8-4715-86f0-25ae9887042e)
 ![IMG-20260218-WA0007-4](https://github.com/user-attachments/assets/4bd002d2-6d06-47ec-aaf5-7ae630c87c98)
 ![IMG-20260218-WA0006-5](https://github.com/user-attachments/assets/815e34ee-c222-45e5-8024-070b65c86521)
 
+## Metric Report
+```bash
+======================================================================
+KAFKA STREAMING TEST REPORT — Part C
+Generated: 2026-02-17 20:43:50
+======================================================================
 
+── TEST 1: 10 000 Event Production ─────────────────────────────────
+  Events produced : 10,000
+  Time            : 0.69s
+  Throughput      : 14581 msg/s
+  Result          : PASS ✓
+
+── TEST 2: Consumer Lag Under Throttling ────────────────────────────
+  Throttle        : 5 ms/message (simulating slow consumer)
+  Failure rate    : 15%
+  Total processed : 10,000
+  Failed orders   : 1,463  (14.63%)
+
+   Processed  Elapsed(s)   Rate(msg/s)    Est. Lag
+  ----------  ----------  ------------  ----------
+         500         3.7         133.5       9,500
+       1,000         7.0         142.7       9,000
+       1,500        10.3         146.2       8,500
+       2,000        13.5         147.9       8,000
+       2,500        16.8         148.7       7,500
+       3,000        20.0         149.6       7,000
+       3,500        23.3         150.0       6,500
+       4,000        26.6         150.4       6,000
+       4,500        29.9         150.7       5,500
+       5,000        33.1         150.9       5,000
+       5,500        36.4         151.2       4,500
+       6,000        39.6         151.4       4,000
+       6,500        42.8         151.7       3,500
+       7,000        46.1         151.9       3,000
+       7,500        49.4         151.9       2,500
+       8,000        52.6         152.1       2,000
+       8,500        55.9         152.1       1,500
+       9,000        59.1         152.3       1,000
+       9,500        62.4         152.3         500
+      10,000        65.6         152.5           0
+  Result          : PASS ✓  (lag grows as throttle slows consumer)
+
+── TEST 3: Replay Consistency ───────────────────────────────────────
+  Metric                             Original       Replay    Match
+  ------------------------------  ------------  ------------  --------
+  Total orders                         10,000       10,000        ✓
+  Total inventory events               10,000       10,000        ✓
+  Failure rate (%)                     14.63%       14.63%   Δ0.00pp
+  Avg orders/min                      10000.0      10000.0
+
+  WHY FAILURE RATE DIFFERS ON REPLAY:
+  The inventory consumer calls random.random() per message to simulate
+  stock availability. This is NOT persisted in the Kafka event — only
+  the result (available/out_of_stock) is written to inventory-events.
+  On replay the order-events are re-read but the inventory consumer
+  re-randomises, so exact failure counts differ. Event *counts* and
+  aggregate order metrics are fully deterministic and consistent.
+  Result          : PASS ✓  (counts match; rate variance expected)
+
+── ORDERS BY RESTAURANT (Original Run) ──────────────────────────────
+  Burger King           2,068 orders   $ 56,354.52
+  Starbucks             2,026 orders   $ 55,374.91
+  Subway                2,004 orders   $ 54,833.49
+  Pizza Hut             1,982 orders   $ 54,563.21
+  Panda Express         1,920 orders   $ 52,941.69
+
+======================================================================
+SUMMARY: All 3 tests PASSED
+======================================================================
+```
 
 
