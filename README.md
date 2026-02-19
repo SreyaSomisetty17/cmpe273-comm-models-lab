@@ -187,6 +187,57 @@ python -m pytest tests/test_async.py -v -s
 ### Tests outputs
 <img width="712" height="228" alt="image" src="https://github.com/user-attachments/assets/2aab7008-21b3-4d93-8953-dc188c90903a" />
 <img width="733" height="423" alt="image" src="https://github.com/user-attachments/assets/32bed67f-f3e8-4fcd-ae3c-34f6c055641e" />
+## Failure Injection Details
+
+### 1. Backlog Drain (Consumer Down for 60s)
+
+```bash
+# Stop inventory service
+docker compose stop inventory_service
+
+# Publish 10 orders (they queue up in RabbitMQ)
+for i in $(seq 1 10); do
+  curl -s -X POST http://localhost:5001/order \
+    -H "Content-Type: application/json" \
+    -d "{\"item\":\"Coffee\",\"qty\":1,\"student_id\":\"S$i\"}"
+done
+
+# Check backlog in RabbitMQ UI → order_placed queue will show 10 ready messages
+
+# Restart inventory service
+docker compose start inventory_service
+
+# Watch logs – all 10 messages drain within seconds
+docker compose logs -f inventory_service
+```
+<img width="944" height="320" alt="image" src="https://github.com/user-attachments/assets/d0790a44-3da4-47e1-9d3c-ce082819db52" />
+<img width="873" height="315" alt="image" src="https://github.com/user-attachments/assets/d8bb5f8a-056e-4aa6-9dc0-805c13e82a06" />
+
+**Why it works:** RabbitMQ durably stores messages. When the consumer reconnects, messages are delivered in FIFO order. The producer (OrderService) is never blocked — it returns `201` immediately because the `publish` call is fire-and-forget to the broker.
+
+### 2. Idempotency (Duplicate Message)
+
+The InventoryService maintains an in-memory set `processed_order_ids`. When it receives an `OrderPlaced` event:
+
+1. It checks whether `order_id` has already been processed.
+2. If **yes** → it logs a warning and ACKs the message (no-op).
+3. If **no** → it performs the reservation and adds the ID to the set.
+
+**Strategy:** Application-level deduplication using a processed-ID set. In production this would be backed by a database or Redis with a TTL.
+
+### 3. DLQ / Poison Message
+
+The `order_placed` queue is configured with:
+```json
+{
+  "x-dead-letter-exchange": "",
+  "x-dead-letter-routing-key": "order_placed_dlq"
+}
+```
+
+When InventoryService receives a message it cannot parse (invalid JSON, missing required fields), it calls `basic_nack(requeue=False)`. RabbitMQ then routes the message to `order_placed_dlq` instead of discarding it, allowing later inspection.
+
+---
 
 # Part C — Streaming Test Suite
 
